@@ -44,7 +44,7 @@ func (p *personne_serv) vers_string() string {
 }
 
 func (p *personne_serv) donne_statut() string {
-	// A FAIRE
+	// A FAIRE ajout inutile
 }
 
 // Goroutine qui maintient une table d'association entre identifiant et personne_serv
