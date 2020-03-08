@@ -95,7 +95,14 @@ type personne_emp struct {
 
 // paquet de personne distante, pour la Partie 2, implemente l'interface personne_int
 type personne_dist struct {
-	// A FAIRE
+	identifiant int
+	proxy chan message_proxy
+}
+
+type message_proxy struct {
+	retour chan string
+	methode string
+	identifiant int
 }
 
 // interface des personnes manipulees par les ouvriers, les
@@ -181,21 +188,31 @@ func (p *personne_emp) donne_statut() string {
 // ces méthodes doivent appeler le proxy (aucun calcul direct)
 
 func (p personne_dist) initialise() {
-	// A FAIRE
+	local := make(chan string)
+	mess := message_proxy { methode: "initialise", retour: local, identifiant: p.identifiant }
+	p.proxy <- mess
+	<- local
 }
 
 func (p personne_dist) travaille() {
-	// A FAIRE
+	local := make(chan string)
+	mess := message_proxy { methode: "travaille", retour: local, identifiant: p.identifiant }
+	p.proxy <- mess
+	<- local
 }
 
 func (p personne_dist) vers_string() string {
-	// A FAIRE
-	return ""
+	local := make(chan string)
+	mess := message_proxy { methode: "vers string", retour: local, identifiant: p.identifiant }
+	p.proxy <- mess
+	return <- local
 }
 
 func (p personne_dist) donne_statut() string {
-	// A FAIRE
-	return ""
+	local := make(chan string)
+	mess := message_proxy { methode: "donne statut", retour: local, identifiant: p.identifiant }
+	p.proxy <- mess
+	return <- local
 }
 
 // *** CODE DES GOROUTINES DU SYSTEME ***
@@ -314,8 +331,16 @@ func producteur(canal_gestionnaire chan personne_int /*, canal_lecteur chan mess
 // Partie 2: les producteurs distants cree des personne_int implementees par des personne_dist qui contiennent un identifiant unique
 // utilisé pour retrouver l'object sur le serveur
 // la creation sur le client d'une personne_dist doit declencher la creation sur le serveur d'une "vraie" personne, initialement vide, de statut V
-func producteur_distant() {
-	// A FAIRE
+func producteur_distant(enfiler chan personne_int, port int, proxer chan message_proxy, frais chan int) {
+	for {
+		n := <- frais
+		fmt.Println("Producteur distant crée identifiant", n)
+		np := personne_dist { identifiant: n, proxy: proxer }
+		local := make(chan string)
+		proxer <- message_proxy { methode: "creer", retour: local, identifiant: n }
+		<- local
+		enfiler <- np
+	}
 }
 
 // Partie 1: les gestionnaires recoivent des personne_int des producteurs et des ouvriers et maintiennent chacun une file de personne_int
@@ -384,18 +409,14 @@ func collecteur(canal_collecteur chan personne_int, fintemps chan int) {
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano()) // graine pour l'aleatoire
-	/*
-
-	// Pour la partie 2
-
 	if len(os.Args) < 3 {
 		fmt.Println("Format: client <port> <millisecondes d'attente>")
 		return
 	}
-	*/
-	//port, _ := strconv.Atoi(os.Args[1]) // utile pour la partie 2
-	//millis, _ := strconv.Atoi(os.Args[2]) // duree du timeout 
-	var millis int = 1000
+	
+	port, _ := strconv.Atoi(os.Args[1]) // utile pour la partie 2
+	millis, _ := strconv.Atoi(os.Args[2]) // duree du timeout 
+	//var millis int = 1000
 	fintemps := make(chan int)
 
 

@@ -58,7 +58,18 @@ func mainteneur() {
 // elle attend sur la socketi un message content un nom de methode et un identifiant et appelle le mainteneur avec ces arguments
 // elle recupere le resultat du mainteneur et l'envoie sur la socket, puis ferme la socket
 func gere_connection() {
-	// A FAIRE
+	continu := true
+	for continu {
+		message, _ := bufio.NewReader(conn).ReadString('\n')
+		if message != "\n" {
+			fmt.Print("Message reçu:", string(message))
+			conn.Write([]byte(strings.ToUpper(message)))
+		} else {
+			conn.Close()
+			continu = false
+		}
+	}
+	fmt.Println("Fin Connexion")
 }
 
 func main() {
