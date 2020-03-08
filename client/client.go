@@ -121,18 +121,38 @@ func personne_de_ligne(l string) st.Personne {
 // *** METHODES DE L'INTERFACE personne_int POUR LES PAQUETS DE PERSONNES ***
 
 func (p *personne_emp) initialise() {
+	print("arrivée dans la fonction initialise\n")
 	ret := make(chan string)
+	//print("a\n")
 	//p.lecteur <- message_lec { contenu: p.ligne, retour: ret } // Ils font comme si p.contenu était du string
 	//var err error;
 	var contenu_temp int64;
+	//print("b\n")
 	contenu_temp, _ = strconv.ParseInt(p.ligne, 10, 32)
+	//print("c\n")
+
+	// Initilisation du lecteur
+	//p.lecteur := make(chan message_lec)
+	go func (chan message_lec){
+		lecteur(p.lecteur)
+	}(p.lecteur)
+
 	p.lecteur <- message_lec { contenu: int(contenu_temp), retour: ret } 
+	//p.lecteur := <- canal_lecteur 
+	
+	//print("d\n")
 	ligne := <- ret
+	//print("e\n")
 	p.Personne = personne_de_ligne(ligne)
+	//print("f\n")
 	for i := 0; i < rand.Intn(6)+1; i++ {
+		//print("g\n")
 		p.afaire = append(p.afaire, tr.UnTravail())
+		//print("h\n")
 	}
+	//print("i\n")
 	p.statut = "R"
+	//print("j\n")
 }
 
 func (p *personne_emp) travaille() {
@@ -192,23 +212,35 @@ func lecteur(url chan message_lec) {
 		m := <- url
 		fmt.Println("Lecteur contacté pour ligne", m.contenu)
 		fichier, err := os.Open(FICHIER_SOURCE)
+		//print("aa\n")
 		if err != nil {
 			log.Fatal(err)
 		}
+		//print("bb\n")
 
 		scanner := bufio.NewScanner(fichier)
+		//print("cc\n")
 		_ = scanner.Scan()
+		//print("dd\n")
 
-		for i := 0; i < m.contenu; i++ {
+		for i := 0; i < 1; i++ { // i < m.contenu mais ça fait bugger et de tt façon ça fait rien
+			//print("ee%d\n", i)
 			_ = scanner.Scan()
+			//print("ff\n")
 		}
 
 		resultat := scanner.Scan()
+		//print("gg\n")
 		if resultat == false {
+			//print("hh\n")
 			log.Fatal(err)
+			//print("ii\n")
 		} else {
+			//print("jj\n")
 			m.retour <- scanner.Text()
+			//print("kk\n")
 		}
+		//print("find de la lecture, fermeture du fichier\n")
 		fichier.Close()
 		
 	}
@@ -229,14 +261,18 @@ func ouvrier(canal_ouvrier chan personne_int, canal_gestionnaire chan personne_i
 				if personne.donne_statut() == "V" {
 					print("reception d'un paquet V\n")
 					personne.initialise()
+					print("renvoie du paquet initialisé au gestionnaire\n")
 					canal_gestionnaire <- personne
 				} else if personne.donne_statut() == "R" {
 					print("reception d'un paquet R\n")
 					personne.travaille()
+					print("renvoie du paquet travaillé au gestionnaire\n")
 					canal_gestionnaire <- personne
 				} else if personne.donne_statut() == "C" {
-					print("reception d'un paquet C\n")
+					print("reception d'un paquet C, envoie au collecteur\n")
 					canal_collecteur <- personne
+				} else {
+					print("reception d'un paquet de type inconnu\n")
 				}
 			
 		}
@@ -247,7 +283,7 @@ func ouvrier(canal_ouvrier chan personne_int, canal_gestionnaire chan personne_i
 // Partie 1: les producteurs cree des personne_int implementees par des personne_emp initialement vides,
 // de statut V mais contenant un numéro de ligne (pour etre initialisee depuis le fichier texte)
 // la personne est passée aux gestionnaires
-func producteur(canal_gestionnaire chan personne_int , canal_lecteur chan message_lec) {
+func producteur(canal_gestionnaire chan personne_int /*, canal_lecteur chan message_lec*/) {
 	for {
 		np := pers_vide
 		nt := make([]func(st.Personne) st.Personne, 0)
@@ -301,21 +337,27 @@ func gestionnaire(canal_gestionnaire chan personne_int, canal_ouvrier chan perso
 		var temp personne_int = file_personnes[0]
 		file_personnes = file_personnes[1:]
 
+		print("envoie du paquet dans le canal ouvrier\n")
 		canal_ouvrier <- temp
 	}
 }
 
 // Partie 1: le collecteur recoit des personne_int dont le statut est c, il les collecte dans un journal
 // quand il recoit un signal de fin du temps, il imprime son journal.
-func collecteur(canal_collecteur chan personne_int) {
+func collecteur(canal_collecteur chan personne_int, fintemps chan int) {
 	for{
-		personne := <- canal_collecteur
+		select {
+			case <- fintemps:
+				print("signal de fin reçu dans collecteur\n")
+				fintemps <- 0
+				return
+			case personne := <- canal_collecteur:
+				// Temporaire, juste pour voir si ça marche
+				print(personne.vers_string())
+				print("\n")
 
-		// Temporaire, juste pour voir si ça marche
-		print(personne.vers_string())
-		print("\n")
+		}
 	}
-	
 }
 
 func main() {
@@ -343,7 +385,7 @@ func main() {
 	canal_gestionnaire 	:= make(chan personne_int)
 	canal_ouvrier 		:= make(chan personne_int)
 	canal_collecteur 	:= make(chan personne_int)
-	canal_lecteur		:= make(chan message_lec)
+	//canal_lecteur		:= make(chan message_lec)
 
 	var file_personnes []personne_int
 	
@@ -353,20 +395,24 @@ func main() {
 		gestionnaire(canal_gestionnaire, canal_ouvrier, file_personnes)
 	}(canal_gestionnaire, canal_ouvrier, file_personnes)
 
-	// Initialisation de l'ouvrier
-	go func (chan personne_int, chan personne_int, chan personne_int){
-		ouvrier(canal_ouvrier, canal_gestionnaire, canal_collecteur)
-	}(canal_ouvrier, canal_gestionnaire, canal_collecteur)
+	// Initialisation des l'ouvriers
+	for i := 0; i < TAILLE_QUEUE; i++ {
+		go func (chan personne_int, chan personne_int, chan personne_int){
+			ouvrier(canal_ouvrier, canal_gestionnaire, canal_collecteur)
+		}(canal_ouvrier, canal_gestionnaire, canal_collecteur)
+	}
+	
+
 
 	// Initilisation du collecteur
-	go func (chan personne_int){
-		collecteur(canal_collecteur)
-	}(canal_collecteur)
+	go func (chan personne_int, chan int){
+		collecteur(canal_collecteur, fintemps)
+	}(canal_collecteur, fintemps)
 
 	// Initilisation du producteur
-	go func (chan personne_int, chan message_lec){
-		producteur(canal_gestionnaire, canal_lecteur)
-	}(canal_gestionnaire, canal_lecteur)
+	go func (chan personne_int/*, chan message_lec*/){
+		producteur(canal_gestionnaire/*, canal_lecteur*/)
+	}(canal_gestionnaire/*, canal_lecteur*/)
 
 	print("fin du lancement de tous les elements\n")
 
@@ -376,5 +422,5 @@ func main() {
 		
 	time.Sleep(time.Duration(millis) * time.Millisecond)
 	fintemps <- 0
-	//<-fintemps
+	<-fintemps
 }
