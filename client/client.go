@@ -267,7 +267,7 @@ func ouvrier(canal_ouvrier chan personne_int, canal_gestionnaire chan personne_i
 					print("reception d'un paquet R\n")
 					personne.travaille()
 					print("renvoie du paquet travaillé au gestionnaire\n")
-					canal_gestionnaire <- personne
+					canal_ouvrier <- personne
 				} else if personne.donne_statut() == "C" {
 					print("reception d'un paquet C, envoie au collecteur\n")
 					canal_collecteur <- personne
@@ -324,35 +324,57 @@ func producteur_distant() {
 // plus rendre les paquets sur lesquels ils travaillent pour en prendre des autres
 func gestionnaire(canal_gestionnaire chan personne_int, canal_ouvrier chan personne_int, file_personnes []personne_int) {
 	for {
-		personne := <- canal_gestionnaire
+		select {
+			case personne := <- canal_gestionnaire :
+				print("reception d'un paquet dans la fonction gestionnaire\n")
+		
+				if((personne.donne_statut() != "V") || (len(file_personnes) <= (TAILLE_QUEUE / 2))){
+					print("insertion du paquet dans la file\n")
+					file_personnes = append(file_personnes, personne)
+				} 
+
+				var temp personne_int = file_personnes[0]
+				file_personnes = file_personnes[1:]
+
+				print("envoie du paquet dans le canal ouvrier\n")
+				canal_ouvrier <- temp
+
+			case personne := <- canal_ouvrier :
+					print("reception d'un paquet dans la fonction gestionnaire - depuis ouvrier\n")
+		
+				if((personne.donne_statut() != "V") || (len(file_personnes) <= (TAILLE_QUEUE / 2))){
+					print("insertion du paquet dans la file\n")
+					file_personnes = append(file_personnes, personne)
+				} 
+
+				var temp personne_int = file_personnes[0]
+				file_personnes = file_personnes[1:]
+
+				print("envoie du paquet dans le canal ouvrier\n")
+				canal_ouvrier <- temp
+		}
+		//personne := <- canal_gestionnaire
 		//var file_personnes []personne_emp
 
-		print("reception d'un paquet dans la fonction gestionnaire\n")
 		
-		if(len(file_personnes) <= (TAILLE_QUEUE / 2)){
-			print("insertion du paquet dans la file\n")
-			file_personnes = append(file_personnes, personne)
-		} 
-
-		var temp personne_int = file_personnes[0]
-		file_personnes = file_personnes[1:]
-
-		print("envoie du paquet dans le canal ouvrier\n")
-		canal_ouvrier <- temp
 	}
 }
 
 // Partie 1: le collecteur recoit des personne_int dont le statut est c, il les collecte dans un journal
 // quand il recoit un signal de fin du temps, il imprime son journal.
 func collecteur(canal_collecteur chan personne_int, fintemps chan int) {
+	var acc string;
+
 	for{
 		select {
 			case <- fintemps:
 				print("signal de fin reçu dans collecteur\n")
+				print(acc)
 				fintemps <- 0
 				return
 			case personne := <- canal_collecteur:
 				// Temporaire, juste pour voir si ça marche
+				acc += personne.vers_string() + "\n"
 				print(personne.vers_string())
 				print("\n")
 
@@ -373,7 +395,7 @@ func main() {
 	*/
 	//port, _ := strconv.Atoi(os.Args[1]) // utile pour la partie 2
 	//millis, _ := strconv.Atoi(os.Args[2]) // duree du timeout 
-	var millis int = 10000
+	var millis int = 1000
 	fintemps := make(chan int)
 
 
@@ -396,7 +418,7 @@ func main() {
 	}(canal_gestionnaire, canal_ouvrier, file_personnes)
 
 	// Initialisation des l'ouvriers
-	for i := 0; i < TAILLE_QUEUE; i++ {
+	for i := 0; i < 10; i++ {
 		go func (chan personne_int, chan personne_int, chan personne_int){
 			ouvrier(canal_ouvrier, canal_gestionnaire, canal_collecteur)
 		}(canal_ouvrier, canal_gestionnaire, canal_collecteur)
@@ -419,7 +441,7 @@ func main() {
 	
 
 
-		
+	
 	time.Sleep(time.Duration(millis) * time.Millisecond)
 	fintemps <- 0
 	<-fintemps
