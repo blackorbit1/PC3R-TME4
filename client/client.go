@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"log"
+	"bufio"
+
 	st "./structures" // contient la structure Personne
 	tr "./travaux" // contient les fonctions de travail sur les Personnes
 )
@@ -77,7 +80,7 @@ var NB_PD int = 2                                          // nombre de producte
 var pers_vide = st.Personne{Nom: "", Prenom: "", Age: 0, Sexe: "M"} // une personne vide
 
 type message_lec struct {
-	contenu int
+	contenu int //string //int  TODO à la base c'était un int
 	retour chan string
 }
 
@@ -119,7 +122,11 @@ func personne_de_ligne(l string) st.Personne {
 
 func (p *personne_emp) initialise() {
 	ret := make(chan string)
-	p.lecteur <- message_lec { contenu: p.ligne, retour: ret }
+	//p.lecteur <- message_lec { contenu: p.ligne, retour: ret } // Ils font comme si p.contenu était du string
+	//var err error;
+	var contenu_temp int64;
+	contenu_temp, _ = strconv.ParseInt(p.ligne, 10, 32)
+	p.lecteur <- message_lec { contenu: int(contenu_temp), retour: ret } 
 	ligne := <- ret
 	p.Personne = personne_de_ligne(ligne)
 	for i := 0; i < rand.Intn(6)+1; i++ {
@@ -180,7 +187,7 @@ func proxy() {
 }
 
 // Partie 1 : contacté par la méthode initialise() de personne_emp, récupère une ligne donnée dans le fichier source
-func lecteur() {
+func lecteur(url chan message_lec) {
 	for {
 		m := <- url
 		fmt.Println("Lecteur contacté pour ligne", m.contenu)
@@ -211,20 +218,27 @@ func lecteur() {
 // Si le statut est V, ils initialise le paquet de personne puis le repasse aux gestionnaires
 // Si le statut est R, ils travaille une fois sur le paquet puis le repasse aux gestionnaires
 // Si le statut est C, ils passent le paquet au collecteur
-func ouvrier(canal_ouvrier chan personne_emp, canal_gestionnaire chan personne_emp, canal_collecteur chan personne_emp) {
+func ouvrier(canal_ouvrier chan personne_int, canal_gestionnaire chan personne_int, canal_collecteur chan personne_int) {
+	//fmt.Println("lancement d'ouvrier")
 	for{
-		personne := <- canal_ouvrier
+		//personne := <- canal_ouvrier
 
 		select {
-			case personne.donne_statut() == "V":
-				personne.initialise()
-				canal_gestionnaire <- personne
-			case personne.donne_statut() == "R":
-				personne.travaille()
-				canal_gestionnaire <- personne
-			case personne.donne_statut() == "C":
-				canal_collecteur <- personne
-		
+		case personne := <- canal_ouvrier :
+
+				if personne.donne_statut() == "V" {
+					print("reception d'un paquet V\n")
+					personne.initialise()
+					canal_gestionnaire <- personne
+				} else if personne.donne_statut() == "R" {
+					print("reception d'un paquet R\n")
+					personne.travaille()
+					canal_gestionnaire <- personne
+				} else if personne.donne_statut() == "C" {
+					print("reception d'un paquet C\n")
+					canal_collecteur <- personne
+				}
+			
 		}
 	}
 	
@@ -233,17 +247,29 @@ func ouvrier(canal_ouvrier chan personne_emp, canal_gestionnaire chan personne_e
 // Partie 1: les producteurs cree des personne_int implementees par des personne_emp initialement vides,
 // de statut V mais contenant un numéro de ligne (pour etre initialisee depuis le fichier texte)
 // la personne est passée aux gestionnaires
-func producteur(canal_gestionnaire chan personne_emp) {
+func producteur(canal_gestionnaire chan personne_int , canal_lecteur chan message_lec) {
 	for {
 		np := pers_vide
 		nt := make([]func(st.Personne) st.Personne, 0)
+
+		/*
+			ligne string
+			statut string
+			lecteur chan message_lec
+			afaire []func(st.Personne) st.Personne
+			st.Personne
+		*/
 		npe := personne_emp{
 			statut: "V",
-			ligne: rand.intn(TAILLE_SOURCE),
+			ligne: strconv.Itoa(rand.Intn(TAILLE_SOURCE)),
 			afaire: nt,
 			Personne: np,
-			lecteur, make(chan message_lec) // TODO a faire
-		}
+			//lecteur: canal_lecteur, 
+			lecteur:
+			make(chan message_lec) }
+		
+		//print("Producteur crée une ligne\n")
+
 		fmt.Println("Producteur crée une ligne", npe.ligne)
 		canal_gestionnaire <- personne_int(&npe) // est ce qu'il ne faut pas qu'il puisse y avoir plusieurs channels de gestionnaires ?
 	}
@@ -259,18 +285,20 @@ func producteur_distant() {
 // Partie 1: les gestionnaires recoivent des personne_int des producteurs et des ouvriers et maintiennent chacun une file de personne_int
 // ils les passent aux ouvriers quand ils sont disponibles
 // ATTENTION: la famine des ouvriers doit être évitée: si les producteurs inondent les gestionnaires de paquets, les ouvrier ne pourront
-// plus rendre les paquets surlesquels ils travaillent pour en prendre des autres
-func gestionnaire(canal_gestionnaire chan personne_emp, canal_ouvrier chan personne_emp, file_personnes [TAILLE_QUEUE]personne_emp) {
+// plus rendre les paquets sur lesquels ils travaillent pour en prendre des autres
+func gestionnaire(canal_gestionnaire chan personne_int, canal_ouvrier chan personne_int, file_personnes []personne_int) {
 	for {
-		personne <- canal_gestionnaire
+		personne := <- canal_gestionnaire
+		//var file_personnes []personne_emp
 
+		print("reception d'un paquet dans la fonction gestionnaire\n")
+		
 		if(len(file_personnes) <= (TAILLE_QUEUE / 2)){
+			print("insertion du paquet dans la file\n")
 			file_personnes = append(file_personnes, personne)
-		} else {
-			canal_gestionnaire <- personne // faire en sorte que ça bloque l'arrivée du paquet
-		}
+		} 
 
-		temp = file_personnes[0]
+		var temp personne_int = file_personnes[0]
 		file_personnes = file_personnes[1:]
 
 		canal_ouvrier <- temp
@@ -279,24 +307,31 @@ func gestionnaire(canal_gestionnaire chan personne_emp, canal_ouvrier chan perso
 
 // Partie 1: le collecteur recoit des personne_int dont le statut est c, il les collecte dans un journal
 // quand il recoit un signal de fin du temps, il imprime son journal.
-func collecteur(canal_collecteur chan personne_emp) {
+func collecteur(canal_collecteur chan personne_int) {
 	for{
 		personne := <- canal_collecteur
 
 		// Temporaire, juste pour voir si ça marche
 		print(personne.vers_string())
+		print("\n")
 	}
 	
 }
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano()) // graine pour l'aleatoire
+	/*
+
+	// Pour la partie 2
+
 	if len(os.Args) < 3 {
 		fmt.Println("Format: client <port> <millisecondes d'attente>")
 		return
 	}
-	port, _ := strconv.Atoi(os.Args[1]) // utile pour la partie 2
-	millis, _ := strconv.Atoi(os.Args[2]) // duree du timeout 
+	*/
+	//port, _ := strconv.Atoi(os.Args[1]) // utile pour la partie 2
+	//millis, _ := strconv.Atoi(os.Args[2]) // duree du timeout 
+	var millis int = 10000
 	fintemps := make(chan int)
 
 
@@ -305,40 +340,41 @@ func main() {
 	// creer les canaux
 	// lancer les goroutines (parties 1 et 2): 1 lecteur, 1 collecteur, des producteurs, des gestionnaires, des ouvriers
 	// lancer les goroutines (partie 2): des producteurs distants, un proxy
-	canal_gestionnaire 	:= make(chan personne_emp)
-	canal_ouvrier 		:= make(chan personne_emp)
-	canal_collecteur 	:= make(chan personne_emp)
+	canal_gestionnaire 	:= make(chan personne_int)
+	canal_ouvrier 		:= make(chan personne_int)
+	canal_collecteur 	:= make(chan personne_int)
+	canal_lecteur		:= make(chan message_lec)
 
-	var file_personnes [TAILLE_QUEUE]personne_emp
+	var file_personnes []personne_int
 	
 
 	// Initialisation du gestionnaire
-	go func (chan personne_emp, chan personne_emp, [TAILLE_QUEUE]personne_emp){
+	go func (chan personne_int, chan personne_int, []personne_int){
 		gestionnaire(canal_gestionnaire, canal_ouvrier, file_personnes)
 	}(canal_gestionnaire, canal_ouvrier, file_personnes)
 
 	// Initialisation de l'ouvrier
-	go func (chan personne_emp, chan personne_emp, chan personne_emp){
+	go func (chan personne_int, chan personne_int, chan personne_int){
 		ouvrier(canal_ouvrier, canal_gestionnaire, canal_collecteur)
 	}(canal_ouvrier, canal_gestionnaire, canal_collecteur)
 
 	// Initilisation du collecteur
-	go func (chan personne_emp){
+	go func (chan personne_int){
 		collecteur(canal_collecteur)
 	}(canal_collecteur)
 
 	// Initilisation du producteur
-	go func (chan personne_emp){
-		producteur(canal_gestionnaires)
-	}(canal_gestionnaire)
+	go func (chan personne_int, chan message_lec){
+		producteur(canal_gestionnaire, canal_lecteur)
+	}(canal_gestionnaire, canal_lecteur)
 
-
+	print("fin du lancement de tous les elements\n")
 
 	
 
 
-
+		
 	time.Sleep(time.Duration(millis) * time.Millisecond)
 	fintemps <- 0
-	<-fintemps
+	//<-fintemps
 }
