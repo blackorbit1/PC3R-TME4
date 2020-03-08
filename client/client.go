@@ -13,6 +13,9 @@ import (
 )
 
 
+const TAILLE_QUEUE int = 10
+
+
 /*     A VOIR 
 
 
@@ -208,14 +211,29 @@ func lecteur() {
 // Si le statut est V, ils initialise le paquet de personne puis le repasse aux gestionnaires
 // Si le statut est R, ils travaille une fois sur le paquet puis le repasse aux gestionnaires
 // Si le statut est C, ils passent le paquet au collecteur
-func ouvrier() {
-	// A FAIRE
+func ouvrier(canal_ouvrier chan personne_emp, canal_gestionnaire chan personne_emp, canal_collecteur chan personne_emp) {
+	for{
+		personne := <- canal_ouvrier
+
+		select {
+			case personne.donne_statut() == "V":
+				personne.initialise()
+				canal_gestionnaire <- personne
+			case personne.donne_statut() == "R":
+				personne.travaille()
+				canal_gestionnaire <- personne
+			case personne.donne_statut() == "C":
+				canal_collecteur <- personne
+		
+		}
+	}
+	
 }
 
 // Partie 1: les producteurs cree des personne_int implementees par des personne_emp initialement vides,
 // de statut V mais contenant un numéro de ligne (pour etre initialisee depuis le fichier texte)
 // la personne est passée aux gestionnaires
-func producteur() {
+func producteur(canal_gestionnaire chan personne_emp) {
 	for {
 		np := pers_vide
 		nt := make([]func(st.Personne) st.Personne, 0)
@@ -227,7 +245,7 @@ func producteur() {
 			lecteur, make(chan message_lec) // TODO a faire
 		}
 		fmt.Println("Producteur crée une ligne", npe.ligne)
-		enfiler <- personne_int(&npe)
+		canal_gestionnaire <- personne_int(&npe) // est ce qu'il ne faut pas qu'il puisse y avoir plusieurs channels de gestionnaires ?
 	}
 }
 
@@ -242,14 +260,33 @@ func producteur_distant() {
 // ils les passent aux ouvriers quand ils sont disponibles
 // ATTENTION: la famine des ouvriers doit être évitée: si les producteurs inondent les gestionnaires de paquets, les ouvrier ne pourront
 // plus rendre les paquets surlesquels ils travaillent pour en prendre des autres
-func gestionnaire() {
-	// A FAIRE
+func gestionnaire(canal_gestionnaire chan personne_emp, canal_ouvrier chan personne_emp, file_personnes [TAILLE_QUEUE]personne_emp) {
+	for {
+		personne <- canal_gestionnaire
+
+		if(len(file_personnes) <= (TAILLE_QUEUE / 2)){
+			file_personnes = append(file_personnes, personne)
+		} else {
+			canal_gestionnaire <- personne // faire en sorte que ça bloque l'arrivée du paquet
+		}
+
+		temp = file_personnes[0]
+		file_personnes = file_personnes[1:]
+
+		canal_ouvrier <- temp
+	}
 }
 
 // Partie 1: le collecteur recoit des personne_int dont le statut est c, il les collecte dans un journal
 // quand il recoit un signal de fin du temps, il imprime son journal.
-func collecteur() {
-	// A FAIRE
+func collecteur(canal_collecteur chan personne_emp) {
+	for{
+		personne := <- canal_collecteur
+
+		// Temporaire, juste pour voir si ça marche
+		print(personne.vers_string())
+	}
+	
 }
 
 func main() {
@@ -268,6 +305,39 @@ func main() {
 	// creer les canaux
 	// lancer les goroutines (parties 1 et 2): 1 lecteur, 1 collecteur, des producteurs, des gestionnaires, des ouvriers
 	// lancer les goroutines (partie 2): des producteurs distants, un proxy
+	canal_gestionnaire 	:= make(chan personne_emp)
+	canal_ouvrier 		:= make(chan personne_emp)
+	canal_collecteur 	:= make(chan personne_emp)
+
+	var file_personnes [TAILLE_QUEUE]personne_emp
+	
+
+	// Initialisation du gestionnaire
+	go func (chan personne_emp, chan personne_emp, [TAILLE_QUEUE]personne_emp){
+		gestionnaire(canal_gestionnaire, canal_ouvrier, file_personnes)
+	}(canal_gestionnaire, canal_ouvrier, file_personnes)
+
+	// Initialisation de l'ouvrier
+	go func (chan personne_emp, chan personne_emp, chan personne_emp){
+		ouvrier(canal_ouvrier, canal_gestionnaire, canal_collecteur)
+	}(canal_ouvrier, canal_gestionnaire, canal_collecteur)
+
+	// Initilisation du collecteur
+	go func (chan personne_emp){
+		collecteur(canal_collecteur)
+	}(canal_collecteur)
+
+	// Initilisation du producteur
+	go func (chan personne_emp){
+		producteur(canal_gestionnaires)
+	}(canal_gestionnaire)
+
+
+
+	
+
+
+
 	time.Sleep(time.Duration(millis) * time.Millisecond)
 	fintemps <- 0
 	<-fintemps
